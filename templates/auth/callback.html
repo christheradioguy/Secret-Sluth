@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Authentication Callback - Secret Sluth{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header text-center">
+                    <h4><i class="fas fa-spinner fa-spin"></i> Processing Authentication...</h4>
+                </div>
+                <div class="card-body text-center">
+                    <div id="loading-message">
+                        <p>Please wait while we complete your authentication...</p>
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    
+                    <div id="error-message" style="display: none;">
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <span id="error-text"></span>
+                        </div>
+                        <a href="{{ url_for('auth.login') }}" class="btn btn-primary">
+                            <i class="fas fa-arrow-left"></i> Back to Login
+                        </a>
+                    </div>
+                    
+                    <div id="success-message" style="display: none;">
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            Authentication successful! Redirecting...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Processing OAuth callback...');
+    
+    // Check for URL fragments (OAuth implicit flow)
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    
+    // Check for tokens in URL fragment
+    const accessToken = params.get('access_token');
+    const idToken = params.get('id_token');
+    const error = params.get('error');
+    const errorDescription = params.get('error_description');
+    
+    if (error) {
+        console.error('OAuth error:', error, errorDescription);
+        showError(errorDescription || error);
+        return;
+    }
+    
+    if (accessToken || idToken) {
+        console.log('Found tokens in URL fragment, processing...');
+        processImplicitFlow(accessToken, idToken);
+        return;
+    }
+    
+    // Check for authorization code in query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    
+    if (code) {
+        console.log('Found authorization code, processing...');
+        processAuthorizationCode(code, state);
+        return;
+    }
+    
+    // No tokens or code found
+    console.error('No authentication tokens or code found');
+    showError('No authentication tokens or authorization code received');
+});
+
+function processImplicitFlow(accessToken, idToken) {
+    if (!accessToken) {
+        showError('No access token received');
+        return;
+    }
+    
+    // Send the access token to our callback endpoint
+    const formData = new FormData();
+    formData.append('access_token', accessToken);
+    if (idToken) {
+        formData.append('id_token', idToken);
+    }
+    
+    fetch('{{ url_for("auth.callback") }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess();
+            setTimeout(() => {
+                window.location.href = '{{ url_for("main.dashboard") }}';
+            }, 1000);
+        } else {
+            showError(data.message || 'Authentication failed');
+        }
+    })
+    .catch(error => {
+        console.error('Error processing implicit flow:', error);
+        showError('Failed to process authentication');
+    });
+}
+
+function processAuthorizationCode(code, state) {
+    // For authorization code flow, we can just redirect to the callback
+    // The server will handle the code exchange
+    const currentUrl = new URL(window.location);
+    currentUrl.searchParams.set('code', code);
+    if (state) {
+        currentUrl.searchParams.set('state', state);
+    }
+    
+    // Redirect to the callback endpoint
+    window.location.href = currentUrl.toString();
+}
+
+function showError(message) {
+    document.getElementById('loading-message').style.display = 'none';
+    document.getElementById('error-text').textContent = message;
+    document.getElementById('error-message').style.display = 'block';
+}
+
+function showSuccess() {
+    document.getElementById('loading-message').style.display = 'none';
+    document.getElementById('success-message').style.display = 'block';
+}
+</script>
+{% endblock %}

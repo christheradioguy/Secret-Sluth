@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Vault Error - Secret Sluth{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <div class="card shadow">
+                <div class="card-body">
+                    <div class="mb-4">
+                        <i class="fas fa-shield-alt fa-4x text-warning mb-3"></i>
+                        <h2 class="text-warning">Vault Connection Error</h2>
+                        <p class="lead text-muted">
+                            {{ message }}
+                        </p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <div class="alert alert-info">
+                            <h6><i class="fas fa-info-circle me-2"></i>What you can do:</h6>
+                            <ul class="text-start mb-0">
+                                <li>Check your Vault server URL and ensure it's accessible</li>
+                                <li>Verify your Vault token is valid and has the required permissions</li>
+                                <li>Ensure your Vault server is running and healthy</li>
+                                <li>Check your network connection to the Vault server</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('auth.login') }}" class="btn btn-primary">
+                            <i class="fas fa-sign-in-alt me-2"></i>
+                            Try Again
+                        </a>
+                        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-home me-2"></i>
+                            Go to Home Page
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

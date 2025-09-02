@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+
+{% block title %}Search Results - Secret Sluth{% endblock %}
+
+{% block head %}
+<meta name="vault-url" content="{{ vault_url }}">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/results.css') }}">
+<script src="{{ url_for('static', filename='js/results.js', v=timestamp) }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>
+                    <i class="fas fa-search"></i> Search Results
+                </h1>
+                <div>
+                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">
+                        <i class="fas fa-search"></i> New Search
+                    </a>
+                    <a href="{{ url_for('engines.select_engines') }}" class="btn btn-secondary">
+                        <i class="fas fa-cog"></i> Manage Engines
+                    </a>
+                </div>
+            </div>
+
+            <!-- Search Summary -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-info-circle"></i> Search Summary
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Query:</strong> <code>{{ search_config.query }}</code></p>
+                            <p><strong>Results Found:</strong> {{ search_config.total_results if search_config.total_results else pagination.total_results }}</p>
+                            <p><strong>Search Duration:</strong> {{ "%.2f"|format(search_config.duration) }} seconds</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Case Sensitive:</strong> {{ "Yes" if search_config.case_sensitive else "No" }}</p>
+                            <p><strong>Search Scope:</strong> 
+                                {% if search_config.search_in_names %}Names{% endif %}
+                                {% if search_config.search_in_names and search_config.search_in_keys %}, {% endif %}
+                                {% if search_config.search_in_keys %}Keys{% endif %}
+                                {% if search_config.search_in_keys and search_config.search_in_values %}, {% endif %}
+                                {% if search_config.search_in_values %}Values{% endif %}
+                                {% if search_config.search_in_metadata %}, Metadata{% endif %}
+                            </p>
+                            <p><strong>Max Depth:</strong> {{ search_config.max_depth }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics -->
+            <div class="row mb-4 statistics">
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-primary">{{ statistics.total_results }}</h3>
+                            <p class="card-text">Total Results</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-success">{{ statistics.unique_paths }}</h3>
+                            <p class="card-text">Unique Paths</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-info">{{ statistics.engines_with_results }}</h3>
+                            <p class="card-text">Engines with Results</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters and Actions -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-filter"></i> Filters & Actions
+                        </h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-danger" onclick="clearResults()">
+                                <i class="fas fa-trash"></i> Clear Results
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="exportResults('json')">
+                                <i class="fas fa-download"></i> Export JSON
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="exportResults('csv')">
+                                <i class="fas fa-download"></i> Export CSV
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row filter-controls">
+                        <div class="col-md-3">
+                            <label for="filterEngine" class="form-label">Engine Path</label>
+                            <select class="form-select" id="filterEngine">
+                                <option value="">All Engines</option>
+                                {% for engine in statistics.engine_paths|default([]) %}
+                                <option value="{{ engine }}">{{ engine }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="filterType" class="form-label">Match Type</label>
+                            <select class="form-select" id="filterType">
+                                <option value="">All Types</option>
+                                <option value="name">Name Matches</option>
+                                <option value="key">Key Matches</option>
+                                <option value="value">Value Matches</option>
+                                <option value="metadata">Metadata Matches</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="sortBy" class="form-label">Sort By</label>
+                            <select class="form-select" id="sortBy">
+                                <option value="path" {% if sort_by == 'path' %}selected{% endif %}>Path</option>
+                                <option value="key" {% if sort_by == 'key' %}selected{% endif %}>Key</option>
+                                <option value="engine_path" {% if sort_by == 'engine_path' %}selected{% endif %}>Engine</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list"></i> Search Results
+                        <span class="badge badge-primary ml-2">{{ pagination.total_results }}</span>
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    {% if results %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 results-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Path</th>
+                                    <th>Key</th>
+                                    <th>Value</th>
+                                    <th>Match Type</th>
+                                    <th>Engine</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for result in results %}
+                                <tr>
+                                    <td data-label="Path">
+                                        <code>{{ result.display_path }}</code>
+                                    </td>
+                                    <td data-label="Key">
+                                        <strong>{{ result.display_key }}</strong>
+                                        {% if 'key' in result.match_highlights %}
+                                            <span class="badge bg-success text-white ml-1">Match</span>
+                                        {% endif %}
+                                    </td>
+                                    <td data-label="Value">
+                                        {% if result.display_value == '[REDACTED]' %}
+                                            <span class="text-muted">{{ result.display_value }}</span>
+                                        {% else %}
+                                            <code>{{ result.display_value[:50] }}{% if result.display_value|length > 50 %}...{% endif %}</code>
+                                        {% endif %}
+                                        {% if 'value' in result.match_highlights %}
+                                            <span class="badge bg-success text-white ml-1">Match</span>
+                                        {% endif %}
+                                    </td>
+                                    <td data-label="Match Type">
+                                        <span class="badge bg-{{ 'success' if 'name' in result.match_highlights else 'primary' if 'key' in result.match_highlights else 'secondary' if 'value' in result.match_highlights else 'info' }} text-white">
+                                            {{ result.match_highlights.keys()|list|first if result.match_highlights else 'unknown' }}
+                                        </span>
+                                    </td>
+                                    <td data-label="Engine">
+                                        <code>{{ result.engine_path }}</code>
+                                    </td>
+                                    <td data-label="Actions">
+                                        <div class="action-buttons d-flex gap-1 flex-wrap">
+                                            <button class="btn btn-sm btn-outline-primary" onclick="copyToClipboard('{{ result.display_path }}')" title="Copy Path">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                            {% if vault_url %}
+                                            <button class="btn btn-sm btn-outline-success" onclick="openVaultLink('{{ result.engine_type }}', '{{ result.engine_path }}', '{{ result.display_path }}')" title="Open in Vault">
+                                                <i class="fas fa-external-link-alt"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                        <h4>No results found</h4>
+                        <p class="text-muted">Try adjusting your search criteria or selecting different engines.</p>
+                                        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">
+                    <i class="fas fa-search"></i> New Search
+                </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            {% if pagination.total_pages > 1 %}
+            <nav aria-label="Search results pagination" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+                        <a class="page-link" href="{{ url_for('search.search_results', page=pagination.page-1, sort_by=sort_by, sort_order=sort_order) }}">
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </a>
+                    </li>
+                    
+                    {% for page_num in range(1, pagination.total_pages + 1) %}
+                        {% if page_num == pagination.page %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ page_num }}</span>
+                            </li>
+                        {% elif page_num <= 3 or page_num > pagination.total_pages - 3 or (page_num >= pagination.page - 1 and page_num <= pagination.page + 1) %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('search.search_results', page=page_num, sort_by=sort_by, sort_order=sort_order) }}">
+                                    {{ page_num }}
+                                </a>
+                            </li>
+                        {% elif page_num == 4 and pagination.page > 5 %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                        {% elif page_num == pagination.total_pages - 3 and pagination.page < pagination.total_pages - 4 %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+                        <a class="page-link" href="{{ url_for('search.search_results', page=pagination.page+1, sort_by=sort_by, sort_order=sort_order) }}">
+                            Next <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+
+
+<script>
+// Filter functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const filterEngine = document.getElementById('filterEngine');
+    const filterType = document.getElementById('filterType');
+    const sortBy = document.getElementById('sortBy');
+    
+    // Apply filters when changed
+    [filterEngine, filterType, sortBy].forEach(element => {
+        element.addEventListener('change', applyFilters);
+    });
+    
+    function applyFilters() {
+        const params = new URLSearchParams();
+        
+        if (filterEngine.value) params.append('engine_path', filterEngine.value);
+        if (filterType.value) params.append('match_type', filterType.value);
+        if (sortBy.value) params.append('sort_by', sortBy.value);
+        
+        window.location.href = '{{ url_for("search.search_results") }}?' + params.toString();
+    }
+});
+
+// Export functionality
+function exportResults(format) {
+    const params = new URLSearchParams();
+    params.append('format', format);
+    params.append('include_secret_data', 'false');
+    
+    window.location.href = '{{ url_for("search.export_results_simple") }}?' + params.toString();
+}
+
+// Clear results functionality
+function clearResults() {
+    if (confirm('Are you sure you want to clear all search results? This action cannot be undone.')) {
+        fetch('{{ url_for("search.clear_search_results_simple") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show success message
+                const toast = document.createElement('div');
+                toast.className = 'toast position-fixed top-0 end-0 m-3';
+                toast.innerHTML = `
+                    <div class="toast-header">
+                        <i class="fas fa-check text-success"></i>
+                        <strong class="me-auto">Cleared!</strong>
+                        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">
+                        ${data.message}
+                    </div>
+                `;
+                document.body.appendChild(toast);
+                new bootstrap.Toast(toast).show();
+                
+                // Redirect to search form
+                setTimeout(() => {
+                    window.location.href = '{{ url_for("main.dashboard") }}';
+                }, 2000);
+            } else {
+                alert('Failed to clear results: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to clear results');
+        });
+    }
+}
+
+// Copy to clipboard
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        // Show success message
+        const toast = document.createElement('div');
+        toast.className = 'toast position-fixed top-0 end-0 m-3';
+        toast.innerHTML = `
+            <div class="toast-header">
+                <i class="fas fa-check text-success"></i>
+                <strong class="me-auto">Copied!</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">
+                Path copied to clipboard
+            </div>
+        `;
+        document.body.appendChild(toast);
+        new bootstrap.Toast(toast).show();
+        
+        setTimeout(() => {
+            document.body.removeChild(toast);
+        }, 3000);
+    });
+}
+
+// Show result details
+function showResultDetails(resultId) {
+    // This would load detailed information about the result
+    // For now, just show a placeholder
+    const modal = new bootstrap.Modal(document.getElementById('resultDetailsModal'));
+    document.getElementById('resultDetailsContent').innerHTML = `
+        <p>Detailed information for result ${resultId} would be displayed here.</p>
+        <p>This could include:</p>
+        <ul>
+            <li>Full secret value (if permitted)</li>
+            <li>Metadata information</li>
+            <li>Access history</li>
+            <li>Related secrets</li>
+        </ul>
+    `;
+    modal.show();
+}
+
+
+</script>
+{% endblock %}
+

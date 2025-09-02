@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Secret Sluth - Home{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 text-center">
+        <div class="mb-4">
+            <h1 class="display-4 text-primary mb-3">
+                <i class="fas fa-search"></i> Secret Sluth
+            </h1>
+            <p class="lead text-muted">
+                A powerful web interface for searching HashiCorp Vault secrets across multiple engines
+            </p>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-plug fa-3x text-primary mb-3"></i>
+                        <h5 class="card-title">Connect to Vault</h5>
+                        <p class="card-text">
+                            Authenticate with your HashiCorp Vault server to start searching secrets.
+                        </p>
+                        <a href="{{ url_for('auth.login') }}" class="btn btn-primary">
+                            <i class="fas fa-sign-in-alt"></i> Login to Vault
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-shield-alt fa-3x text-success mb-3"></i>
+                        <h5 class="card-title">Secure & Fast</h5>
+                        <p class="card-text">
+                            Search across multiple secret engines with secure token-based authentication.
+                        </p>
+                        <div class="text-muted">
+                            <small>
+                                <i class="fas fa-check-circle text-success"></i> Token validation<br>
+                                <i class="fas fa-check-circle text-success"></i> Multi-engine search<br>
+                                <i class="fas fa-check-circle text-success"></i> Real-time results
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if session.get('connected') %}
+        <div class="mt-4">
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i>
+                <strong>Authenticated with Vault!</strong> 
+                You're currently connected to {{ session.get('vault_url') }}.
+                <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-outline-success ms-3">
+                    Go to Dashboard
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

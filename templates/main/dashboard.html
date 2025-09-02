@@ -1,0 +1,1395 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Secret Sluth{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>
+                <i class="fas fa-tachometer-alt"></i> Dashboard
+            </h2>
+            <div>
+                <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Connection Status -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-check-circle"></i> Connection Status
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <strong>Vault URL:</strong><br>
+                        <code id="vault-url">{{ vault_url }}</code>
+                    </div>
+                    <div class="col-6">
+                        <strong>Status:</strong><br>
+                        <span class="badge bg-success">
+                            <i class="fas fa-check-circle"></i> Connected
+                        </span>
+                    </div>
+                </div>
+                
+                {% if token_info %}
+                <hr>
+                <h6>Token Information:</h6>
+                <div class="row">
+                    <div class="col-6">
+                        <strong>Token ID:</strong><br>
+                        <code class="small">{{ token_info.id[:20] }}...</code>
+                    </div>
+                    <div class="col-6">
+                        <strong>TTL:</strong><br>
+                        {{ token_info.ttl }} seconds
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <strong>Policies:</strong><br>
+                    {% for policy in token_info.policies %}
+                        <span class="badge bg-primary me-1">{{ policy }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt"></i> Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary" onclick="showEngineSelection()">
+                        <i class="fas fa-check-square"></i> Select Engines
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="showSearchForm()">
+                        <i class="fas fa-search"></i> Search Secrets
+                    </button>
+                    <button class="btn btn-outline-success" onclick="showCachedSearches()">
+                        <i class="fas fa-history"></i> Cached Searches
+                    </button>
+                    <button class="btn btn-outline-info" onclick="showTokenInfo()">
+                        <i class="fas fa-info-circle"></i> Token Details
+                    </button>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results Section -->
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-list"></i> Results
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="resultsContent">
+                    <div class="text-center text-muted">
+                        <i class="fas fa-arrow-up fa-2x mb-2"></i>
+                        <p>Use the quick actions above to interact with your Vault server.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Debug: Check if script is loading
+
+// Define all functions at the top to ensure they're available
+function showResults(title, content) {
+    document.getElementById('resultsContent').innerHTML = `
+        <h6>${title}</h6>
+        ${content}
+    `;
+}
+
+function showSearchForm() {
+    // Check if engines are selected first
+    fetch('/engines/selected')
+        .then(response => response.json())
+        .then(data => {
+            if (!data.engines || data.engines.length === 0) {
+                showResults('No Engines Selected', `
+                    <div class="text-center">
+                        <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                        <h4>No Engines Selected</h4>
+                        <p class="text-muted">Before you can search for secrets, you need to select which secret engines to search in.</p>
+                        <div class="mt-4">
+                            <a href="/engines/select" class="btn btn-primary btn-lg">
+                                <i class="fas fa-cog"></i> Select Engines
+                            </a>
+                        </div>
+                    </div>
+                `);
+                return;
+            }
+            
+            // Show search form in the results pane
+            showResults('Search Secrets', `
+        <div class="search-form-container">
+            <form id="searchForm" class="needs-validation" novalidate>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label for="query" class="form-label">Search Query</label>
+                            <input type="text" class="form-control" id="query" name="query" 
+                                   placeholder="Enter your search term..." required>
+                            <small class="form-text text-muted">
+                                Search for secrets containing this text in keys or values.
+                                <br><strong>Advanced Search:</strong>
+                                <br>• Use <code>*</code> for wildcards (e.g., <code>api*</code> matches <code>api-key</code>, <code>api_token</code>)
+                                <br>• Use <code>?</code> for single character (e.g., <code>test?</code> matches <code>test1</code>, <code>test2</code>)
+                                <br>• Use <code>/pattern/</code> for regex (e.g., <code>/api.*key/</code>)
+                                <br>• Use <code>"exact"</code> for exact matches
+                            </small>
+                            <div id="searchHelp" class="mt-2">
+                                <small class="text-muted">Enter your search term above</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="max_results" class="form-label">Max Results</label>
+                            <select class="form-select" id="max_results" name="max_results">
+                                <option value="50">50</option>
+                                <option value="100" selected>100</option>
+                                <option value="200">200</option>
+                                <option value="500">500</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Search Options</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="case_sensitive" name="case_sensitive">
+                                <label class="form-check-label" for="case_sensitive">
+                                    Case Sensitive
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="search_in_names" name="search_in_names" checked>
+                                <label class="form-check-label" for="search_in_names">
+                                    Search in Secret Names
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="search_in_keys" name="search_in_keys" checked>
+                                <label class="form-check-label" for="search_in_keys">
+                                    Search in Keys
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="search_in_values" name="search_in_values" checked>
+                                <label class="form-check-label" for="search_in_values">
+                                    Search in Values
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Performance Options</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="enable_parallel" name="enable_parallel" checked>
+                                <label class="form-check-label" for="enable_parallel">
+                                    Enable Parallel Processing
+                                </label>
+                                <small class="form-text text-muted d-block">Process multiple engines simultaneously for faster searches</small>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-6">
+                                    <label for="parallel_searches" class="form-label">Parallel Workers</label>
+                                    <select class="form-select" id="parallel_searches" name="parallel_searches">
+                                        <option value="3">3</option>
+                                        <option value="5" selected>5</option>
+                                        <option value="8">8</option>
+                                        <option value="10">10</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label for="batch_size" class="form-label">Batch Size</label>
+                                    <select class="form-select" id="batch_size" name="batch_size">
+                                        <option value="25">25</option>
+                                        <option value="50" selected>50</option>
+                                        <option value="100">100</option>
+                                        <option value="200">200</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Advanced Options</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="search_in_metadata" name="search_in_metadata">
+                                <label class="form-check-label" for="search_in_metadata">
+                                    Search in Metadata
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="include_secret_data" name="include_secret_data" checked>
+                                <label class="form-check-label" for="include_secret_data">
+                                    Include Secret Data
+                                </label>
+                            </div>
+                            <div class="mb-2">
+                                <label for="max_depth" class="form-label">Max Depth</label>
+                                <select class="form-select" id="max_depth" name="max_depth">
+                                    <option value="5">5 levels</option>
+                                    <option value="10" selected>10 levels</option>
+                                    <option value="20">20 levels</option>
+                                    <option value="50">50 levels</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <button type="button" class="btn btn-secondary me-md-2" onclick="resetResults()">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                </div>
+            </form>
+        </div>
+    `);
+    
+    // Add form submission handler
+    document.getElementById('searchForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        executeSearch();
+    });
+    
+    // Add search help functionality
+    const queryInput = document.getElementById('query');
+    if (queryInput) {
+        queryInput.addEventListener('input', updateSearchHelp);
+        queryInput.addEventListener('keyup', updateSearchHelp);
+    }
+    })
+    .catch(error => {
+        console.error('Error checking engines:', error);
+        showResults('Error', `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> Failed to check engine selection. Please try again.
+            </div>
+        `);
+    });
+}
+
+function showEngineSelection() {
+    
+    // Show loading state
+    showResults('Loading Engine Selection...', `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading engine selection interface...</p>
+        </div>
+    `);
+    
+    // Fetch the engine selection page HTML
+    fetch('/engines/select')
+        .then(response => response.text())
+        .then(html => {
+            // Extract the main content from the HTML response
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const mainContent = doc.querySelector('.container-fluid');
+            
+            if (mainContent) {
+                
+                // Remove the "Back to Dashboard" button since we're already on the dashboard
+                const backButton = mainContent.querySelector('a[href*="dashboard"]');
+                if (backButton) {
+                    backButton.remove();
+                }
+                
+                // Update the Cancel button to reset the dashboard instead of going back
+                const cancelButton = mainContent.querySelector('button[onclick*="history.back"]');
+                if (cancelButton) {
+                    cancelButton.onclick = function() {
+                        resetResults();
+                    };
+                }
+                
+                // Check if form exists in the content
+                const formInContent = mainContent.querySelector('#engine-selection-form');
+                
+                showResults('Select Secret Engines', mainContent.innerHTML);
+                
+                // Wait a bit for DOM to be ready, then initialize
+                setTimeout(() => {
+                    initializeEngineSelection();
+                }, 200);
+                
+                // Set up form submission after the content is injected
+                setTimeout(() => {
+                    const form = document.getElementById('engine-selection-form');
+                    if (form) {
+                        // Remove the onsubmit="return false;" attribute that might be interfering
+                        form.removeAttribute('onsubmit');
+                        form.addEventListener('submit', function(e) {
+                            e.preventDefault();
+                            
+                            // Capture checkbox values IMMEDIATELY before any DOM changes
+                            const formCheckboxes = form.querySelectorAll('input[type="checkbox"]');
+                            const selectedEngines = [];
+                            
+                            formCheckboxes.forEach(checkbox => {
+                                if (checkbox.checked) {
+                                    selectedEngines.push(checkbox.value);
+                                }
+                            });
+                            
+                            // Store the selected engines in a global variable for the handler
+                            window.capturedSelectedEngines = selectedEngines;
+                            
+                            handleEngineSelectionSubmit(e);
+                        });
+                        
+
+                    }
+                }, 300);
+            } else {
+                showResults('Error', `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Failed to load engine selection interface.
+                    </div>
+                `);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading engine selection:', error);
+            showResults('Error', `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> Failed to load engine selection interface: ${error.message}
+                </div>
+            `);
+        });
+}
+
+function updateSearchHelp() {
+    const query = document.getElementById('query').value;
+    const helpText = document.getElementById('searchHelp');
+    
+    if (!helpText) return;
+    
+    if (query.includes('*') || query.includes('?')) {
+        helpText.innerHTML = '<i class="fas fa-info-circle text-info"></i> <strong>Wildcard Search:</strong> Using wildcards for pattern matching';
+    } else if (query.startsWith('/') && query.endsWith('/')) {
+        helpText.innerHTML = '<i class="fas fa-code text-info"></i> <strong>Regex Search:</strong> Using regular expression pattern';
+    } else if (query.startsWith('"') && query.endsWith('"')) {
+        helpText.innerHTML = '<i class="fas fa-equals text-info"></i> <strong>Exact Match:</strong> Searching for exact phrase';
+    } else if (query.trim()) {
+        helpText.innerHTML = '<i class="fas fa-search text-info"></i> <strong>Substring Search:</strong> Searching for text within secrets';
+    } else {
+        helpText.innerHTML = '<small class="text-muted">Enter your search term above</small>';
+    }
+}
+
+function resetResults() {
+    showResults('Results', `
+        <div class="text-center text-muted">
+            <i class="fas fa-arrow-up fa-2x mb-2"></i>
+            <p>Use the quick actions above to interact with your Vault server.</p>
+        </div>
+    `);
+}
+
+function executeSearch() {
+    const form = document.getElementById('searchForm');
+    const formData = new FormData(form);
+    
+    // Show loading state
+    showResults('Searching...', `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Searching...</span>
+            </div>
+            <p class="mt-2">Searching Vault secrets...</p>
+            <p class="text-muted">This may take a few moments depending on the number of secrets.</p>
+        </div>
+    `);
+    
+    // Submit search
+    fetch('/search/execute', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Fetch and display results directly
+            fetch('/search/results')
+                .then(response => response.text())
+                .then(html => {
+                    // Extract the results content from the HTML response
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const resultsContent = doc.querySelector('.container-fluid') || doc.body;
+                    
+                    if (data.cached) {
+                        showResults('Search Results (Cached)', `
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i> Showing cached results from previous search.
+                            </div>
+                            ${resultsContent.innerHTML}
+                        `);
+                    } else {
+                        showResults('Search Results', `
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle"></i> Search completed successfully! Found ${data.results_count || 0} results in ${data.duration ? data.duration.toFixed(2) : '0'} seconds.
+                            </div>
+                            ${resultsContent.innerHTML}
+                        `);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching results:', error);
+                    showResults('Search Completed', `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i> Search completed successfully!
+                        </div>
+                        <div class="text-center">
+                            <a href="/search/results" class="btn btn-primary">
+                                <i class="fas fa-eye"></i> View Results
+                            </a>
+                        </div>
+                    `);
+                });
+        } else {
+            showResults('Search Error', `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> ${data.error || 'Search failed'}
+                </div>
+            `);
+        }
+    })
+    .catch(error => {
+        console.error('Search error:', error);
+        showResults('Search Error', `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> Failed to execute search. Please try again.
+            </div>
+        `);
+    });
+}
+
+function showCachedSearches() {
+    // Show loading state
+    showResults('Cached Searches', `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading cached searches...</p>
+        </div>
+    `);
+    
+    // Fetch cached searches from the backend
+    fetch('/search/cached')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.searches && data.searches.length > 0) {
+                    const searchesHtml = data.searches.map(search => `
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="card-title">${search.query || 'Search'}</h6>
+                                        <p class="card-text text-muted">
+                                            <small>
+                                                <i class="fas fa-clock"></i> ${new Date(search.timestamp * 1000).toLocaleString()}<br>
+                                                <i class="fas fa-list"></i> ${search.total_results} results<br>
+                                                <i class="fas fa-stopwatch"></i> ${search.duration.toFixed(2)}s
+                                            </small>
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <button onclick="viewCachedResults('${search.id}')" class="btn btn-sm btn-primary">
+                                            <i class="fas fa-eye"></i> View Results
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    showResults('Cached Searches', `
+                        <div class="mb-3">
+                            <p class="text-muted">Found ${data.searches.length} cached search(es). Results are cached for 30 minutes.</p>
+                        </div>
+                        ${searchesHtml}
+                    `);
+                } else {
+                    showResults('Cached Searches', `
+                        <div class="text-center text-muted">
+                            <i class="fas fa-inbox fa-2x mb-2"></i>
+                            <p>No cached searches found.</p>
+                            <p><small>Search results are cached for 30 minutes after performing a search.</small></p>
+                        </div>
+                    `);
+                }
+            } else {
+                showResults('Cached Searches', `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Error loading cached searches: ${data.error || 'Unknown error'}
+                    </div>
+                `);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching cached searches:', error);
+            showResults('Cached Searches', `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> Failed to load cached searches. Please try again.
+                </div>
+            `);
+                 });
+}
+
+
+
+function showTokenInfo() {
+    const tokenInfo = {{ token_info | tojson | safe }};
+    
+    showResults('Token Information', `
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <tbody>
+                    <tr><td><strong>Token ID</strong></td><td><code>${tokenInfo.id}</code></td></tr>
+                    <tr><td><strong>TTL</strong></td><td>${tokenInfo.ttl} seconds</td></tr>
+                    <tr><td><strong>Creation Time</strong></td><td>${new Date(tokenInfo.creation_time * 1000).toLocaleString()}</td></tr>
+                    <tr><td><strong>Expire Time</strong></td><td>${tokenInfo.expire_time && tokenInfo.expire_time > 0 ? new Date(tokenInfo.expire_time * 1000).toLocaleString() : 'Never'}</td></tr>
+                    <tr><td><strong>Renewable</strong></td><td>${tokenInfo.renewable ? 'Yes' : 'No'}</td></tr>
+                    <tr><td><strong>Orphan</strong></td><td>${tokenInfo.orphan ? 'Yes' : 'No'}</td></tr>
+                    <tr><td><strong>Policies</strong></td><td>${tokenInfo.policies.map(p => `<span class="badge bg-primary me-1">${p}</span>`).join('')}</td></tr>
+                </tbody>
+            </table>
+        </div>
+    `);
+}
+
+// View cached search results in the dashboard
+function viewCachedResults(searchId) {
+    
+    // Show loading state
+    showResults('Loading Cached Results...', `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading cached search results...</p>
+        </div>
+    `);
+    
+    // Fetch the results HTML and display in dashboard
+    fetch(`/search/results?search_id=${searchId}`)
+        .then(response => response.text())
+        .then(html => {
+            // Extract the results content from the HTML response
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const resultsContent = doc.querySelector('.container-fluid') || doc.body;
+            
+            showResults('Cached Search Results', `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> Showing cached results from previous search.
+                </div>
+                ${resultsContent.innerHTML}
+            `);
+        })
+        .catch(error => {
+            console.error('Error fetching cached results:', error);
+            showResults('Error Loading Results', `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> Failed to load cached results. Please try again.
+                </div>
+            `);
+        });
+}
+
+// Open Vault link function for dashboard search results
+function openVaultLink(engineType, enginePath, displayPath) {
+    
+    // Get vault URL from the page using the specific ID
+    const vaultUrlElement = document.getElementById('vault-url');
+    const currentVaultUrl = vaultUrlElement ? vaultUrlElement.textContent.trim() : '';
+    
+    if (!currentVaultUrl) {
+        alert('Vault URL not available');
+        return;
+    }
+    
+    // URL encode the display path properly
+    // Encode spaces and forward slashes
+    const encodedSubpath = displayPath.replace(/ /g, '%20').replace(/\//g, '%2F');
+    
+    // Construct the Vault UI URL based on engine type
+    let vaultUiUrl;
+    if (engineType === 'kv') {
+        // KV stores: /ui/vault/secrets/engine_name/kv/secret_path
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/kv/${encodedSubpath}`;
+    } else if (engineType === 'database') {
+        // Database: /ui/vault/secrets/engine_name/database/secret_path
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/database/${encodedSubpath}`;
+    } else if (engineType === 'ssh') {
+        // SSH: /ui/vault/secrets/engine_name/ssh/secret_path
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/ssh/${encodedSubpath}`;
+    } else if (engineType === 'pki') {
+        // PKI: /ui/vault/secrets/engine_name/pki/secret_path
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/pki/${encodedSubpath}`;
+    } else if (engineType === 'transit') {
+        // Transit: /ui/vault/secrets/engine_name/transit/secret_path
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/transit/${encodedSubpath}`;
+    } else if (engineType === 'aws') {
+        // AWS: /ui/vault/secrets/engine_name/aws/secret_path
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/aws/${encodedSubpath}`;
+    } else if (engineType === 'azure') {
+        // Azure: /ui/vault/secrets/engine_name/azure/secret_path
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/azure/${encodedSubpath}`;
+    } else if (engineType === 'gcp') {
+        // GCP: /ui/vault/secrets/engine_name/gcp/secret_path
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/gcp/${encodedSubpath}`;
+    } else {
+        // Generic fallback: /ui/vault/secrets/engine_name/secret_path
+        const encodedPath = encodeURIComponent(displayPath);
+        vaultUiUrl = `${currentVaultUrl}/ui/vault/secrets/${enginePath}/${encodedPath}`;
+    }
+    
+
+    
+    // Open in new tab
+    window.open(vaultUiUrl, '_blank');
+}
+
+
+
+// Handle engine selection form submission
+async function handleEngineSelectionSubmit(e) {
+    e.preventDefault();
+    
+    // Show loading state
+    showResults('Saving Engine Selection...', `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Saving your engine selection...</p>
+        </div>
+    `);
+    
+
+    
+    try {
+        // Use captured checkbox values if available (preferred method)
+        if (window.capturedSelectedEngines && window.capturedSelectedEngines.length > 0) {
+            const selectedEngines = window.capturedSelectedEngines;
+            
+            // Clear the captured values
+            window.capturedSelectedEngines = null;
+            
+            // Submit the captured values
+            const formData = new FormData();
+            selectedEngines.forEach(engine => {
+                formData.append('selected_engines[]', engine);
+            });
+            
+
+            
+            // Submit the form data
+            fetch('/engines/select', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showResults('Engine Selection', `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i> ${data.message}
+                        </div>
+                        <div class="mt-3">
+                            <button onclick="showSearchForm()" class="btn btn-primary">
+                                <i class="fas fa-search"></i> Start Searching
+                            </button>
+                            <button onclick="showEngineSelection()" class="btn btn-secondary">
+                                <i class="fas fa-cog"></i> Select Different Engines
+                            </button>
+                        </div>
+                    `);
+                } else {
+                    showResults('Engine Selection Error', `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> ${data.message || 'Failed to save engine selection'}
+                        </div>
+                        <div class="mt-3">
+                            <button onclick="showEngineSelection()" class="btn btn-primary">
+                                <i class="fas fa-cog"></i> Try Again
+                            </button>
+                        </div>
+                    `);
+                }
+            })
+            .catch(error => {
+                console.error('Error submitting engine selection:', error);
+                showResults('Engine Selection Error', `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Failed to save engine selection. Please try again.
+                    </div>
+                    <div class="mt-3">
+                        <button onclick="showEngineSelection()" class="btn btn-primary">
+                            <i class="fas fa-cog"></i> Try Again
+                        </button>
+                    </div>
+                `);
+            });
+            
+            return; // Exit early since we handled the submission
+        }
+        
+                // Fallback: If no captured engines, show error
+        showResults('Engine Selection Error', `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> No engine selections were captured. Please try again.
+            </div>
+            <div class="mt-3">
+                <button onclick="showEngineSelection()" class="btn btn-primary">
+                    <i class="fas fa-cog"></i> Try Again
+                </button>
+            </div>
+        `);
+        
+    } catch (error) {
+        console.error('Error submitting engine selection:', error);
+        console.error('Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        showResults('Error Saving Selection', `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> Error saving selection: ${error.message}
+            </div>
+            <div class="text-center mt-3">
+                <button onclick="showEngineSelection()" class="btn btn-outline-primary">
+                    <i class="fas fa-cog"></i> Try Again
+                </button>
+            </div>
+        `);
+    }
+}
+
+// Engine selection helper functions (adapted from engine_selection.js)
+function initializeEngineSelection() {
+    console.log('Initializing engine selection...');
+    
+    // Check if checkboxes exist before initialization
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    console.log('Checkboxes found during initialization:', checkboxes.length);
+    
+    // Initialize counters and summary
+    updateSelectionSummary();
+    
+    // Set up event listeners
+    setupEngineEventListeners();
+    
+    // Populate filter dropdowns
+    populateFilterDropdowns();
+    
+    // Update initial counts
+    updateCounts();
+    
+    console.log('Engine selection initialization complete');
+}
+
+function setupEngineEventListeners() {
+    console.log('Setting up engine event listeners...');
+    
+    // Search functionality
+    const searchInput = document.getElementById('engine-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', debounce(performEngineSearch, 300));
+    }
+    
+    // Filter dropdowns
+    const typeFilter = document.getElementById('type-filter');
+    if (typeFilter) {
+        typeFilter.addEventListener('change', performEngineFilter);
+    }
+    
+    const accessibilityFilter = document.getElementById('accessibility-filter');
+    if (accessibilityFilter) {
+        accessibilityFilter.addEventListener('change', performEngineFilter);
+    }
+    
+    // Bulk action buttons
+    const selectAllBtn = document.getElementById('select-all');
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', selectAllEngines);
+    }
+    
+    const deselectAllBtn = document.getElementById('deselect-all');
+    if (deselectAllBtn) {
+        deselectAllBtn.addEventListener('click', deselectAllEngines);
+    }
+    
+    const selectAccessibleBtn = document.getElementById('select-accessible');
+    if (selectAccessibleBtn) {
+        selectAccessibleBtn.addEventListener('click', selectAccessibleEngines);
+    }
+    
+    const selectKvOnlyBtn = document.getElementById('select-kv-only');
+    if (selectKvOnlyBtn) {
+        selectKvOnlyBtn.addEventListener('click', selectKvEngines);
+    }
+    
+    const expandAllBtn = document.getElementById('expand-all');
+    if (expandAllBtn) {
+        expandAllBtn.addEventListener('click', expandAllGroups);
+    }
+    
+    const collapseAllBtn = document.getElementById('collapse-all');
+    if (collapseAllBtn) {
+        collapseAllBtn.addEventListener('click', collapseAllGroups);
+    }
+    
+    // Checkbox change events
+    document.addEventListener('change', function(e) {
+        if (e.target.type === 'checkbox' && e.target.closest('.engine-item')) {
+            updateSelectionSummary();
+        }
+    });
+    
+    // Debug: Log checkbox count after setup
+    setTimeout(() => {
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+        console.log('Checkboxes after event listener setup:', checkboxes.length);
+    }, 100);
+    
+    console.log('Engine event listeners setup complete');
+}
+
+function populateFilterDropdowns() {
+    const typeFilter = document.getElementById('type-filter');
+    if (!typeFilter) return;
+    
+    // Get all engine types from the page
+    const engineItems = document.querySelectorAll('.engine-item');
+    const types = new Set();
+    
+    engineItems.forEach(item => {
+        const type = item.dataset.type;
+        if (type) {
+            types.add(type);
+        }
+    });
+    
+    // Add options to the dropdown
+    types.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+        typeFilter.appendChild(option);
+    });
+}
+
+function performEngineSearch() {
+    const searchTerm = document.getElementById('engine-search').value.toLowerCase();
+    const engineItems = document.querySelectorAll('.engine-item');
+    
+    engineItems.forEach(item => {
+        const path = item.dataset.path.toLowerCase();
+        const type = item.dataset.type.toLowerCase();
+        const tags = item.dataset.tags.toLowerCase();
+        
+        const matches = path.includes(searchTerm) || 
+                       type.includes(searchTerm) || 
+                       tags.includes(searchTerm);
+        
+        if (matches) {
+            item.style.display = '';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+    
+    updateCounts();
+}
+
+function performEngineFilter() {
+    const typeFilter = document.getElementById('type-filter').value;
+    const accessibilityFilter = document.getElementById('accessibility-filter').value;
+    const engineItems = document.querySelectorAll('.engine-item');
+    
+    engineItems.forEach(item => {
+        const type = item.dataset.type;
+        const accessible = item.dataset.accessible === 'true';
+        
+        let show = true;
+        
+        // Type filter
+        if (typeFilter && type !== typeFilter) {
+            show = false;
+        }
+        
+        // Accessibility filter
+        if (accessibilityFilter === 'accessible' && !accessible) {
+            show = false;
+        } else if (accessibilityFilter === 'inaccessible' && accessible) {
+            show = false;
+        }
+        
+        item.style.display = show ? '' : 'none';
+    });
+    
+    updateCounts();
+}
+
+function selectAllEngines() {
+    const visibleItems = document.querySelectorAll('.engine-item:not([style*="display: none"])');
+    visibleItems.forEach(item => {
+        const checkbox = item.querySelector('input[type="checkbox"]');
+        if (checkbox) {
+            checkbox.checked = true;
+        }
+    });
+    updateSelectionSummary();
+}
+
+function deselectAllEngines() {
+    const checkboxes = document.querySelectorAll('.engine-item input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    updateSelectionSummary();
+}
+
+function selectAccessibleEngines() {
+    const visibleItems = document.querySelectorAll('.engine-item:not([style*="display: none"])');
+    visibleItems.forEach(item => {
+        if (item.dataset.accessible === 'true') {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        }
+    });
+    updateSelectionSummary();
+}
+
+function selectKvEngines() {
+    const visibleItems = document.querySelectorAll('.engine-item:not([style*="display: none"])');
+    visibleItems.forEach(item => {
+        if (item.dataset.type === 'kv') {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        }
+    });
+    updateSelectionSummary();
+}
+
+function updateSelectionSummary() {
+    const checkboxes = document.querySelectorAll('.engine-item input[type="checkbox"]:checked');
+    const selectedCount = checkboxes.length;
+    
+    // Update the selected count display
+    const selectedCountElement = document.getElementById('selected-count');
+    if (selectedCountElement) {
+        selectedCountElement.textContent = selectedCount;
+    }
+    
+    // Update the selection summary text
+    const summaryElement = document.getElementById('selection-summary');
+    if (summaryElement) {
+        if (selectedCount === 0) {
+            summaryElement.textContent = 'No engines selected';
+        } else if (selectedCount === 1) {
+            summaryElement.textContent = '1 engine selected';
+        } else {
+            summaryElement.textContent = `${selectedCount} engines selected`;
+        }
+    }
+}
+
+function updateCounts() {
+    const visibleItems = document.querySelectorAll('.engine-item:not([style*="display: none"])');
+    const totalCount = visibleItems.length;
+    
+    let accessibleCount = 0;
+    const types = new Set();
+    
+    visibleItems.forEach(item => {
+        if (item.dataset.accessible === 'true') {
+            accessibleCount++;
+        }
+        if (item.dataset.type) {
+            types.add(item.dataset.type);
+        }
+    });
+    
+    // Update count displays
+    const totalCountElement = document.getElementById('total-count');
+    if (totalCountElement) {
+        totalCountElement.textContent = totalCount;
+    }
+    
+    const accessibleCountElement = document.getElementById('accessible-count');
+    if (accessibleCountElement) {
+        accessibleCountElement.textContent = accessibleCount;
+    }
+    
+    const typesCountElement = document.getElementById('engine-types-count');
+    if (typesCountElement) {
+        typesCountElement.textContent = types.size;
+    }
+}
+
+// Toggle engine group visibility
+function toggleEngineGroup(heading) {
+    const engineList = heading.nextElementSibling;
+    const icon = heading.querySelector('i');
+    
+    if (engineList.style.display === 'none') {
+        engineList.style.display = 'block';
+        icon.className = 'fas fa-chevron-down me-2';
+    } else {
+        engineList.style.display = 'none';
+        icon.className = 'fas fa-chevron-right me-2';
+    }
+}
+
+// Expand all engine groups
+function expandAllGroups() {
+    const headings = document.querySelectorAll('.engine-group h6');
+    headings.forEach(heading => {
+        const engineList = heading.nextElementSibling;
+        const icon = heading.querySelector('i');
+        engineList.style.display = 'block';
+        icon.className = 'fas fa-chevron-down me-2';
+    });
+}
+
+// Collapse all engine groups
+function collapseAllGroups() {
+    const headings = document.querySelectorAll('.engine-group h6');
+    headings.forEach(heading => {
+        const engineList = heading.nextElementSibling;
+        const icon = heading.querySelector('i');
+        engineList.style.display = 'none';
+        icon.className = 'fas fa-chevron-right me-2';
+    });
+}
+
+// Test function for engine selection
+function testEngineSelection() {
+    console.log('=== ENGINE SELECTION TEST ===');
+    
+    const allCheckboxes = document.querySelectorAll('.engine-item input[type="checkbox"]');
+    const checkedCheckboxes = document.querySelectorAll('.engine-item input[type="checkbox"]:checked');
+    
+    console.log('Total checkboxes found:', allCheckboxes.length);
+    console.log('Checked checkboxes found:', checkedCheckboxes.length);
+    
+    if (allCheckboxes.length === 0) {
+        console.log('ERROR: No checkboxes found!');
+        alert('No checkboxes found in the engine selection form.');
+        return;
+    }
+    
+    // Try to check the first checkbox
+    const firstCheckbox = allCheckboxes[0];
+    firstCheckbox.checked = true;
+    console.log(`Checked first checkbox: "${firstCheckbox.value}"`);
+    
+    // Check if it's now detected as checked
+    const newCheckedCheckboxes = document.querySelectorAll('.engine-item input[type="checkbox"]:checked');
+    console.log('After manual check, checked checkboxes:', newCheckedCheckboxes.length);
+    
+    if (newCheckedCheckboxes.length > 0) {
+        alert(`Successfully checked ${newCheckedCheckboxes.length} checkbox(es). Try saving now.`);
+    } else {
+        alert('Failed to check checkbox. There may be a DOM issue.');
+    }
+}
+
+// Test function for form submission
+function testFormSubmission() {
+    console.log('=== FORM SUBMISSION TEST ===');
+    
+    const form = document.getElementById('engine-selection-form');
+    console.log('Form found:', form);
+    
+    if (!form) {
+        console.log('ERROR: Form not found!');
+        alert('Engine selection form not found!');
+        return;
+    }
+    
+    // Check DOM structure
+    console.log('Form HTML:', form.innerHTML.substring(0, 500) + '...');
+    
+    // Check if form has submit event listeners
+    const submitButton = form.querySelector('button[type="submit"]');
+    console.log('Submit button found:', submitButton);
+    
+    if (submitButton) {
+        console.log('Manually triggering form submission...');
+        submitButton.click();
+    } else {
+        console.log('No submit button found, trying form.submit()');
+        form.submit();
+    }
+    
+    // Also try direct function call
+    console.log('Trying direct function call...');
+    setTimeout(() => {
+        handleEngineSelectionSubmit(new Event('submit'));
+    }, 1000);
+}
+
+// Test function for DOM structure
+function testDOMStructure() {
+    console.log('=== DOM STRUCTURE TEST ===');
+    
+    const form = document.getElementById('engine-selection-form');
+    console.log('Form found:', form);
+    
+    if (!form) {
+        console.log('ERROR: Form not found!');
+        alert('Engine selection form not found!');
+        return;
+    }
+    
+    // Check form structure
+    console.log('Form HTML (first 2000 chars):', form.innerHTML.substring(0, 2000));
+    
+    // Check for specific elements
+    const checkboxes = form.querySelectorAll('input[type="checkbox"]');
+    const engineItems = form.querySelectorAll('.engine-item');
+    const engineGroups = form.querySelectorAll('.engine-group');
+    
+    console.log('Checkboxes in form:', checkboxes.length);
+    console.log('Engine items in form:', engineItems.length);
+    console.log('Engine groups in form:', engineGroups.length);
+    
+    // Check if there are any checkboxes at all
+    const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+    console.log('All checkboxes in document:', allCheckboxes.length);
+    
+    if (allCheckboxes.length > 0) {
+        console.log('First checkbox details:', {
+            value: allCheckboxes[0].value,
+            checked: allCheckboxes[0].checked,
+            className: allCheckboxes[0].className,
+            parentElement: allCheckboxes[0].parentElement?.className
+        });
+    }
+    
+    alert(`Form found: ${!!form}\nCheckboxes in form: ${checkboxes.length}\nAll checkboxes: ${allCheckboxes.length}`);
+}
+
+// Test manual submission with hardcoded engines
+function testManualSubmission() {
+    console.log('=== MANUAL SUBMISSION TEST ===');
+    
+    // First, get the actual available engines from the page
+    const engineItems = document.querySelectorAll('.engine-item');
+    const availableEngines = [];
+    
+    engineItems.forEach(item => {
+        const path = item.dataset.path;
+        if (path) {
+            // Keep the original path with trailing slash
+            availableEngines.push(path);
+        }
+    });
+    
+    console.log('Available engines from page:', availableEngines);
+    
+    // Use the first few available engines for testing
+    const testEngines = availableEngines.slice(0, 3);
+    console.log('Using test engines:', testEngines);
+    
+    // Create form data with actual available engines
+    const formData = new FormData();
+    
+    testEngines.forEach(engine => {
+        formData.append('selected_engines[]', engine);
+    });
+    
+    // Add CSRF token if available
+    const csrfToken = document.querySelector('input[name="csrf_token"]')?.value;
+    if (csrfToken) {
+        formData.append('csrf_token', csrfToken);
+    }
+    
+    console.log('Manual submission with engines:', testEngines);
+    
+    // Submit directly
+    fetch('/engines/select', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
+        
+        // Try to parse as JSON, but handle non-JSON responses
+        return response.text().then(text => {
+            console.log('Response text:', text);
+            try {
+                return { status: response.status, data: JSON.parse(text) };
+            } catch (e) {
+                return { status: response.status, data: { error: text } };
+            }
+        });
+    })
+    .then(result => {
+        console.log('Manual submission result:', result);
+        
+        if (result.status === 200) {
+            showResults('Manual Submission Test', `
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i> Manual submission successful!
+                </div>
+                <div class="card">
+                    <div class="card-header">Response Data</div>
+                    <div class="card-body">
+                        <pre>${JSON.stringify(result.data, null, 2)}</pre>
+                    </div>
+                </div>
+                <div class="text-center mt-3">
+                    <button onclick="showEngineSelection()" class="btn btn-outline-primary">
+                        <i class="fas fa-cog"></i> Back to Engine Selection
+                    </button>
+                </div>
+            `);
+        } else {
+            showResults('Manual Submission Error', `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> Manual submission failed with status ${result.status}
+                </div>
+                <div class="card">
+                    <div class="card-header">Error Response</div>
+                    <div class="card-body">
+                        <pre>${JSON.stringify(result.data, null, 2)}</pre>
+                    </div>
+                </div>
+                <div class="text-center mt-3">
+                    <button onclick="showEngineSelection()" class="btn btn-outline-primary">
+                        <i class="fas fa-cog"></i> Back to Engine Selection
+                    </button>
+                </div>
+            `);
+        }
+    })
+    .catch(error => {
+        console.error('Manual submission error:', error);
+        showResults('Manual Submission Error', `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> Manual submission failed: ${error.message}
+            </div>
+            <div class="text-center mt-3">
+                <button onclick="showEngineSelection()" class="btn btn-outline-primary">
+                    <i class="fas fa-cog"></i> Back to Engine Selection
+                </button>
+            </div>
+        `);
+    });
+}
+
+// Show available engines from the page
+function showAvailableEngines() {
+    console.log('=== SHOWING AVAILABLE ENGINES ===');
+    
+    const engineItems = document.querySelectorAll('.engine-item');
+    const availableEngines = [];
+    
+    engineItems.forEach((item, index) => {
+        const path = item.dataset.path;
+        const type = item.dataset.type;
+        const accessible = item.dataset.accessible;
+        
+        if (path) {
+            availableEngines.push({
+                index: index + 1,
+                path: path,
+                type: type,
+                accessible: accessible
+            });
+        }
+    });
+    
+    console.log('Available engines:', availableEngines);
+    
+    // Show in a popup
+    const engineList = availableEngines.map(engine => 
+        `${engine.index}. ${engine.path} (${engine.type}, accessible: ${engine.accessible})`
+    ).join('\n');
+    
+    alert(`Available Engines (${availableEngines.length} total):\n\n${engineList}`);
+}
+
+// Utility function for debouncing
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+</script>
+{% endblock %}

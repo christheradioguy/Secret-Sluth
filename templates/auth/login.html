@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Secret Sluth{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white text-center">
+                    <h4 class="mb-0">
+                        <i class="fas fa-shield-alt me-2"></i>
+                        Connect to Vault
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('auth.login') }}">
+                        <!-- CSRF Token -->
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        
+                        <div class="mb-3">
+                            <label for="vault_url" class="form-label">
+                                <i class="fas fa-server me-1"></i>
+                                Vault Server URL
+                            </label>
+                            <input type="url" 
+                                   class="form-control" 
+                                   id="vault_url" 
+                                   name="vault_url" 
+                                   value="{{ vault_url or '' }}"
+                                   placeholder="https://vault.example.com:8200"
+                                   required>
+                            <div class="form-text">
+                                Enter the full URL of your Vault server
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="fas fa-key me-1"></i>
+                                Authentication Method
+                            </label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="auth_method" id="auto_detect" value="auto" checked>
+                                <label class="form-check-label" for="auto_detect">
+                                    <strong>Auto-detect</strong> - Let Secret Sluth detect available authentication methods
+                                </label>
+                                <div class="form-text">Recommended - automatically finds userpass, LDAP, OIDC, etc.</div>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="auth_method" id="token_only" value="token">
+                                <label class="form-check-label" for="token_only">
+                                    <strong>Token only</strong> - Go directly to token input
+                                </label>
+                                <div class="form-text">For service accounts or when you already have a token</div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-sign-in-alt me-2"></i>
+                                Connect to Vault
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer text-center">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        You will be redirected to Vault for authentication
+                    </small>
+                </div>
+            </div>
+            
+            <!-- Help Section -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-question-circle me-2"></i>
+                        Need Help?
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="helpAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="headingOne">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne">
+                                    How does authentication work?
+                                </button>
+                            </h2>
+                            <div id="collapseOne" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                                <div class="accordion-body">
+                                    <p>Secret Sluth uses Vault's authentication methods:</p>
+                                    <ol>
+                                        <li><strong>Enter Vault URL:</strong> Provide your Vault server address</li>
+                                        <li><strong>Redirect to Vault:</strong> You'll be redirected to Vault's login page</li>
+                                        <li><strong>Authenticate:</strong> Use your preferred Vault authentication method</li>
+                                        <li><strong>Return to Secret Sluth:</strong> After successful authentication, you'll be redirected back</li>
+                                    </ol>
+                                    <p><strong>Supported Methods:</strong></p>
+                                    <ul>
+                                        <li>Userpass authentication</li>
+                                        <li>LDAP authentication</li>
+                                        <li>OIDC/OAuth authentication</li>
+                                        <li>AppRole authentication</li>
+                                        <li>Token authentication (for service accounts)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="headingTwo">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo">
+                                    What if I have a service account token?
+                                </button>
+                            </h2>
+                            <div id="collapseTwo" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                                <div class="accordion-body">
+                                    <p>If you have a service account or existing token:</p>
+                                    <ol>
+                                        <li>Enter your Vault URL</li>
+                                        <li>Click "Connect to Vault"</li>
+                                        <li>You'll be redirected to a token input page</li>
+                                        <li>Enter your token securely</li>
+                                    </ol>
+                                    <p><strong>Note:</strong> Service account tokens should be used with caution and proper security measures.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Form validation
+    const form = document.querySelector('form');
+    const vaultUrlInput = document.getElementById('vault_url');
+    
+    form.addEventListener('submit', function(e) {
+        const url = vaultUrlInput.value.trim();
+        
+        if (!url) {
+            e.preventDefault();
+            alert('Please enter a Vault server URL');
+            return;
+        }
+        
+        // Basic URL validation
+        try {
+            new URL(url);
+        } catch (error) {
+            e.preventDefault();
+            alert('Please enter a valid URL (e.g., https://vault.example.com:8200)');
+            return;
+        }
+        
+        // Show loading state
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Connecting...';
+        submitBtn.disabled = true;
+    });
+});
+</script>
+{% endblock %}

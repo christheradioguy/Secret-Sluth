@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+
+{% block title %}Select Secret Engines - Secret Sluth{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-cogs"></i> Select Secret Engines</h1>
+                <div>
+                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Dashboard
+                    </a>
+                </div>
+            </div>
+
+            <!-- Selection Summary -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-info-circle"></i> Selection Summary
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 id="selected-count">0</h4>
+                                <small class="text-muted">Selected</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 id="total-count">0</h4>
+                                <small class="text-muted">Total Available</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 id="accessible-count">0</h4>
+                                <small class="text-muted">Accessible</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 id="engine-types-count">0</h4>
+                                <small class="text-muted">Engine Types</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search and Filter Controls -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-search"></i> Search & Filter
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" id="engine-search" 
+                                       placeholder="Search engines by path, type, or tags...">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <select class="form-select" id="type-filter">
+                                <option value="">All Engine Types</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select class="form-select" id="accessibility-filter">
+                                <option value="">All Engines</option>
+                                <option value="accessible">Accessible Only</option>
+                                <option value="inaccessible">Inaccessible Only</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk Actions -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-tasks"></i> Bulk Actions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary" id="select-all">
+                            <i class="fas fa-check-square"></i> Select All
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="deselect-all">
+                            <i class="fas fa-square"></i> Deselect All
+                        </button>
+                        <button type="button" class="btn btn-outline-success" id="select-accessible">
+                            <i class="fas fa-check-circle"></i> Select Accessible
+                        </button>
+                        <button type="button" class="btn btn-outline-info" id="select-kv-only">
+                            <i class="fas fa-key"></i> Select KV Only
+                        </button>
+                    </div>
+                    <div class="btn-group ms-2" role="group">
+                        <button type="button" class="btn btn-outline-warning" id="expand-all">
+                            <i class="fas fa-chevron-down"></i> Expand All
+                        </button>
+                        <button type="button" class="btn btn-outline-warning" id="collapse-all">
+                            <i class="fas fa-chevron-right"></i> Collapse All
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Engine Selection Form -->
+            <form id="engine-selection-form" onsubmit="return false;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-list"></i> Available Engines
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="engine-groups">
+                            {% for engine_type, engines in engine_groups.items() %}
+                            <div class="engine-group mb-4" data-type="{{ engine_type }}">
+                                <h6 class="text-primary mb-3" style="cursor: pointer;" onclick="toggleEngineGroup(this)">
+                                    <i class="fas fa-chevron-down me-2"></i> {{ engine_type|title }} Engines 
+                                    <span class="badge bg-secondary">{{ engines|length }}</span>
+                                </h6>
+                                <div class="list-group engine-list" style="display: block;">
+                                    {% for engine in engines %}
+                                    <div class="list-group-item engine-item" 
+                                         data-path="{{ engine.path }}" 
+                                         data-type="{{ engine.type }}"
+                                         data-accessible="{% if engine.permissions.read %}true{% else %}false{% endif %}"
+                                         data-secret-count="{{ engine.secret_count or 'N/A' }}"
+                                         data-tags="{{ engine.tags|join(',') }}">
+                                        <div class="form-check d-flex align-items-start">
+                                            <input class="form-check-input me-3 mt-1" 
+                                                   type="checkbox" 
+                                                   name="selected_engines[]"
+                                                   value="{{ engine.path }}" 
+                                                   id="engine-{{ loop.index }}"
+                                                   {% if engine.path in selected_engines %}checked{% endif %}>
+                                            <div class="flex-grow-1">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <div>
+                                                        <label class="form-check-label fw-bold" for="engine-{{ loop.index }}">
+                                                            <code class="fs-6">{{ engine.path }}</code>
+                                                        </label>
+                                                        <div class="mt-1">
+                                                            <span class="badge bg-primary me-1">{{ engine.type }}</span>
+                                                            {% if engine.secret_count is not none %}
+                                                                <span class="badge bg-info me-1">{{ engine.secret_count }} secrets</span>
+                                                            {% else %}
+                                                                <span class="badge bg-secondary me-1">N/A</span>
+                                                            {% endif %}
+                                                            {% if engine.permissions.read %}
+                                                                <span class="badge bg-success me-1">Accessible</span>
+                                                            {% else %}
+                                                                <span class="badge bg-danger me-1">Inaccessible</span>
+                                                            {% endif %}
+                                                        </div>
+                                                    </div>
+                                                    <div class="ms-2">
+                                                        {% if engine.permissions.read %}
+                                                            <i class="fas fa-check-circle text-success" title="Accessible"></i>
+                                                        {% else %}
+                                                            <i class="fas fa-times-circle text-danger" title="Inaccessible"></i>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                                {% if engine.description %}
+                                                <div class="text-muted small mb-2">
+                                                    <i class="fas fa-info-circle me-1"></i>{{ engine.description }}
+                                                </div>
+                                                {% endif %}
+                                                {% if engine.tags %}
+                                                <div class="small">
+                                                    <i class="fas fa-tags me-1 text-muted"></i>
+                                                    {% for tag in engine.tags %}
+                                                    <span class="badge bg-light text-dark me-1">{{ tag }}</span>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span id="selection-summary" class="text-muted">
+                                    No engines selected
+                                </span>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-secondary" onclick="window.history.back()">
+                                    <i class="fas fa-times"></i> Cancel
+                                </button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> Save Selection
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Engine selection form submission handler
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Engine selection form loaded');
+    
+    const form = document.getElementById('engine-selection-form');
+    if (form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault(); // Prevent normal form submission
+            
+            console.log('Form submission intercepted');
+            
+            // Get all checked checkboxes
+            const checkedBoxes = form.querySelectorAll('input[type="checkbox"]:checked');
+            console.log('Checked checkboxes found:', checkedBoxes.length);
+            
+            if (checkedBoxes.length === 0) {
+                alert('Please select at least one engine before saving.');
+                return false;
+            }
+            
+            // Create form data
+            const formData = new FormData();
+            checkedBoxes.forEach(checkbox => {
+                formData.append('selected_engines[]', checkbox.value);
+                console.log('Adding engine:', checkbox.value);
+            });
+            
+            // Add CSRF token
+            const csrfToken = form.querySelector('input[name="csrf_token"]')?.value;
+            if (csrfToken) {
+                formData.append('csrf_token', csrfToken);
+            }
+            
+            console.log('Submitting engines:', Array.from(checkedBoxes).map(cb => cb.value));
+            
+            try {
+                // Submit via AJAX
+                const response = await fetch('/engines/select', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                const result = await response.json();
+                console.log('Submission result:', result);
+                
+                if (result.status === 'success') {
+                    alert(`Successfully selected ${result.selected_count} engines!`);
+                    // Redirect back to dashboard
+                    window.location.href = '/dashboard';
+                } else {
+                    alert(`Error: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Submission error:', error);
+                alert('Error saving selection. Please try again.');
+            }
+        });
+    }
+    
+    // Log checkbox count for debugging
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    console.log('Total checkboxes found on load:', checkboxes.length);
+    
+    const checkedBoxes = document.querySelectorAll('input[type="checkbox"]:checked');
+    console.log('Checked checkboxes found on load:', checkedBoxes.length);
+});
+</script>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 mb-0">Saving selection...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+console.log('Inline script test - this should appear in console');
+</script>
+<script src="{{ url_for('static', filename='js/engine_selection.js') }}"></script>
+{% endblock %}
