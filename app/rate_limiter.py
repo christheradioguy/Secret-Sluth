@@ -23,7 +23,7 @@ class RateLimitConfig:
     max_requests: int  # Maximum requests allowed
     window_seconds: int  # Time window in seconds
     burst_size: int = 0  # Allow burst of requests (0 = no burst)
-    block_duration: int = 300  # Block duration in seconds when limit exceeded
+    block_duration: int = 60  # Block duration in seconds when limit exceeded
 
 
 class RateLimiter:
@@ -44,10 +44,10 @@ class RateLimiter:
     
     def _setup_default_limits(self):
         """Setup default rate limits for different endpoints."""
-        self.add_limit('auth', RateLimitConfig(max_requests=5, window_seconds=300))  # 5 login attempts per 5 minutes
+        self.add_limit('auth', RateLimitConfig(max_requests=20, window_seconds=300))  # 5 login attempts per 5 minutes
         self.add_limit('search', RateLimitConfig(max_requests=20, window_seconds=60))  # 20 searches per minute
         self.add_limit('api', RateLimitConfig(max_requests=100, window_seconds=60))  # 100 API calls per minute
-        self.add_limit('export', RateLimitConfig(max_requests=10, window_seconds=300))  # 10 exports per 5 minutes
+        self.add_limit('export', RateLimitConfig(max_requests=50, window_seconds=300))  # 10 exports per 5 minutes
     
     def add_limit(self, endpoint: str, config: RateLimitConfig):
         """
