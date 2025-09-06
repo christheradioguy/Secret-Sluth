@@ -5,13 +5,16 @@ This module contains the main application routes including the home page,
 dashboard, and basic error handling.
 """
 
-from flask import Blueprint, render_template, session, redirect, url_for, jsonify
+from flask import Blueprint, render_template, session, redirect, url_for, jsonify, request, flash
 from app.middleware.auth_middleware import require_auth
 from app.engine_manager import engine_manager
 from app.session_manager import session_manager
 from app.rate_limiter import rate_limiter
 from app.search_optimizer import search_optimizer
 from app.logging_config import get_logger
+from app.vault_client import VaultClient, VaultAuthenticationError, VaultConnectionError
+from app.validators import input_validator
+from app.audit_logger import audit_logger
 import psutil
 import time
 
@@ -43,11 +46,109 @@ def dashboard():
     return render_template('main/dashboard.html', token_info=token_info, vault_url=vault_url, timestamp=timestamp)
 
 
-@main.route('/connect')
-@require_auth
+@main.route('/connect', methods=['GET', 'POST'])
 def connect():
     """Engine connection page."""
-    return render_template('main/connect.html')
+    if request.method == 'GET':
+        return render_template('main/connect.html')
+    
+    # Handle POST request - redirect to proper auth flow
+    vault_url = request.form.get('vault_url', '').strip()
+    auth_method = request.form.get('auth_method', 'auto').strip()
+    
+    # Validate Vault URL
+    is_valid_url, error_msg = input_validator.validate_vault_url(vault_url)
+    if not is_valid_url:
+        flash(error_msg, 'error')
+        return render_template('main/connect.html', vault_url=vault_url)
+    
+    # Store Vault URL in session and redirect to auth flow
+    session['vault_url'] = vault_url
+    
+    # Check authentication method and handle accordingly
+    vault_token = request.form.get('vault_token', '').strip()
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    
+    if auth_method == 'token' and vault_token:
+        # Direct token authentication
+        is_valid_token, error_msg = input_validator.validate_vault_token(vault_token)
+        if not is_valid_token:
+            flash(error_msg, 'error')
+            return render_template('main/connect.html', vault_url=vault_url)
+        
+        try:
+            # Test the token
+            client = VaultClient(vault_url, vault_token)
+            with client:
+                token_info = client.validate_token()
+                
+                # Store authentication in session
+                session_manager.authenticate(vault_url, vault_token, token_info)
+                
+                # Log successful authentication
+                audit_logger.log_authentication_success(vault_url, token_info)
+                
+                logger.info(f"Direct token authentication successful for {vault_url}")
+                flash('Successfully authenticated with Vault!', 'success')
+                return redirect(url_for('main.dashboard'))
+                
+        except VaultAuthenticationError as e:
+            logger.error(f"Token authentication failed: {e}")
+            flash(f'Authentication failed: {str(e)}', 'error')
+            return render_template('main/connect.html', vault_url=vault_url)
+            
+        except VaultConnectionError as e:
+            logger.error(f"Failed to connect to Vault: {e}")
+            flash(f'Failed to connect to Vault server: {str(e)}', 'error')
+            return render_template('main/connect.html', vault_url=vault_url)
+            
+        except Exception as e:
+            logger.error(f"Unexpected error during authentication: {e}")
+            flash(f'Unexpected error: {str(e)}', 'error')
+            return render_template('main/connect.html', vault_url=vault_url)
+            
+    elif auth_method == 'userpass' and username and password:
+        # Username/password authentication
+        try:
+            # Attempt userpass authentication
+            client = VaultClient(vault_url, None)
+            auth_response = client.userpass_login(username, password)
+            
+            if auth_response and 'auth' in auth_response:
+                token = auth_response['auth']['client_token']
+                token_info = auth_response['auth']
+                
+                # Store authentication in session
+                session_manager.authenticate(vault_url, token, token_info)
+                
+                # Log successful authentication
+                audit_logger.log_authentication_success(vault_url, token_info)
+                
+                logger.info(f"Userpass authentication successful for user {username}")
+                flash('Successfully authenticated with Vault!', 'success')
+                return redirect(url_for('main.dashboard'))
+            else:
+                flash('Authentication failed: Invalid response from Vault', 'error')
+                return render_template('main/connect.html', vault_url=vault_url)
+                
+        except VaultAuthenticationError as e:
+            logger.error(f"Userpass authentication failed: {e}")
+            flash(f'Authentication failed: {str(e)}', 'error')
+            return render_template('main/connect.html', vault_url=vault_url)
+            
+        except VaultConnectionError as e:
+            logger.error(f"Failed to connect to Vault: {e}")
+            flash(f'Failed to connect to Vault server: {str(e)}', 'error')
+            return render_template('main/connect.html', vault_url=vault_url)
+            
+        except Exception as e:
+            logger.error(f"Unexpected error during userpass authentication: {e}")
+            flash(f'Unexpected error: {str(e)}', 'error')
+            return render_template('main/connect.html', vault_url=vault_url)
+    else:
+        # No credentials provided or invalid method, redirect to auth method detection
+        return redirect(url_for('auth.login'))
 
 
 @main.route('/disconnect')

@@ -39,7 +39,7 @@ class Config:
         self.TESTING = get_bool_env("TESTING", False)
 
         # Session Configuration
-        self.SESSION_COOKIE_SECURE = True
+        self.SESSION_COOKIE_SECURE = get_bool_env("SESSION_COOKIE_SECURE", False)  # Only secure in production
         self.SESSION_COOKIE_HTTPONLY = True
         self.SESSION_COOKIE_SAMESITE = "Lax"
         self.PERMANENT_SESSION_LIFETIME = 3600  # 1 hour

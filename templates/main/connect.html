@@ -30,17 +30,61 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="vault_token" class="form-label">
-                            <i class="fas fa-key"></i> Vault Token
+                        <label class="form-label">
+                            <i class="fas fa-sign-in-alt"></i> Authentication Method
                         </label>
-                        <input type="password" 
-                               class="form-control" 
-                               id="vault_token" 
-                               name="vault_token" 
-                               placeholder="hvs.xxxxxxxxxxxxxxxx"
-                               required>
-                        <div class="form-text">
-                            Enter your Vault authentication token
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="auth_method" id="auth_token" value="token" checked>
+                            <label class="form-check-label" for="auth_token">
+                                <i class="fas fa-key"></i> Token Authentication
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="auth_method" id="auth_userpass" value="userpass">
+                            <label class="form-check-label" for="auth_userpass">
+                                <i class="fas fa-user"></i> Username/Password
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Token Authentication Fields -->
+                    <div id="token-fields" class="auth-fields">
+                        <div class="mb-3">
+                            <label for="vault_token" class="form-label">
+                                <i class="fas fa-key"></i> Vault Token
+                            </label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="vault_token" 
+                                   name="vault_token" 
+                                   placeholder="hvs.xxxxxxxxxxxxxxxx">
+                            <div class="form-text">
+                                Enter your Vault authentication token
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Username/Password Fields -->
+                    <div id="userpass-fields" class="auth-fields" style="display: none;">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">
+                                <i class="fas fa-user"></i> Username
+                            </label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="username" 
+                                   name="username" 
+                                   placeholder="Enter your username">
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">
+                                <i class="fas fa-lock"></i> Password
+                            </label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="password" 
+                                   name="password" 
+                                   placeholder="Enter your password">
                         </div>
                     </div>
                     
@@ -85,4 +129,37 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tokenRadio = document.getElementById('auth_token');
+    const userpassRadio = document.getElementById('auth_userpass');
+    const tokenFields = document.getElementById('token-fields');
+    const userpassFields = document.getElementById('userpass-fields');
+    
+    function toggleFields() {
+        if (tokenRadio.checked) {
+            tokenFields.style.display = 'block';
+            userpassFields.style.display = 'none';
+            // Make token field required, username/password not required
+            document.getElementById('vault_token').required = true;
+            document.getElementById('username').required = false;
+            document.getElementById('password').required = false;
+        } else if (userpassRadio.checked) {
+            tokenFields.style.display = 'none';
+            userpassFields.style.display = 'block';
+            // Make username/password required, token not required
+            document.getElementById('vault_token').required = false;
+            document.getElementById('username').required = true;
+            document.getElementById('password').required = true;
+        }
+    }
+    
+    tokenRadio.addEventListener('change', toggleFields);
+    userpassRadio.addEventListener('change', toggleFields);
+    
+    // Initialize on page load
+    toggleFields();
+});
+</script>
 {% endblock %}

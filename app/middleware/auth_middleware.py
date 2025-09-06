@@ -96,10 +96,11 @@ class AuthMiddleware:
     
     def before_request(self):
         """Handle requests before they are processed."""
-        # Skip authentication for static files and auth routes
+        # Skip authentication for static files, auth routes, and main routes that don't require auth
         if (request.endpoint and 
             (request.endpoint.startswith('static') or 
-             request.endpoint.startswith('auth.'))):
+             request.endpoint.startswith('auth.') or
+             request.endpoint in ['main.index', 'main.connect'])):
             return
         
         # Check if user is authenticated for protected routes
